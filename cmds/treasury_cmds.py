@@ -508,3 +508,16 @@ def calc_npv(rate=0, cashflows=0, maturities=0, price=0):
 def pv(rate, cashflows, maturities,freq=1):
     price = sum([cfi/(1+rate/freq)**(maturities[i]*freq) for i, cfi in enumerate(cashflows)])
     return price
+
+
+
+
+def next_business_day(DATE):
+    
+    ONE_DAY = datetime.timedelta(days=1)
+    HOLIDAYS_US = holidays.US()
+
+    next_day = DATE
+    while next_day.weekday() in holidays.WEEKEND or next_day in HOLIDAYS_US:
+        next_day += ONE_DAY
+    return next_day
