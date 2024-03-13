@@ -36,6 +36,19 @@ def prev_bday(date,force_prev=False):
         
     return date
 
+
+def next_business_day(DATE):
+    
+    ONE_DAY = datetime.timedelta(days=1)
+    HOLIDAYS_US = holidays.US()
+
+    next_day = DATE
+    while next_day.weekday() in holidays.WEEKEND or next_day in HOLIDAYS_US:
+        next_day += ONE_DAY
+    return next_day
+
+
+
 def get_coupon_dates(quote_date,maturity_date):
 
     if isinstance(quote_date,str):
@@ -512,12 +525,41 @@ def pv(rate, cashflows, maturities,freq=1):
 
 
 
-def next_business_day(DATE):
+def bootstrap_spot_rates(df):
+    """
+    Bootstraps spot rates from a dataframe of bond information.
     
-    ONE_DAY = datetime.timedelta(days=1)
-    HOLIDAYS_US = holidays.US()
+    :param df: Pandas DataFrame with columns 'price', 'cpn rate', and 'ttm'
+    :return: Pandas Series of spot rates indexed by TTM
+    """
+    # Ensure the DataFrame is sorted by TTM
+    df = df.sort_values(by='ttm')
+    
+    # Initialize a dictionary to store spot rates
+    spot_rates = {}
 
-    next_day = DATE
-    while next_day.weekday() in holidays.WEEKEND or next_day in HOLIDAYS_US:
-        next_day += ONE_DAY
-    return next_day
+    # Iterate over each bond
+    for index, row in df.iterrows():
+        ttm, coupon_rate, price = row['ttm'], row['cpn rate'], row['price']
+        cash_flows = [coupon_rate / 2] * round(ttm * 2)  # Semi-annual coupons
+        cash_flows[-1] += 100  # Add the face value to the last cash flow
+
+        # Function to calculate the present value of cash flows
+        def pv_of_cash_flows(spot_rate):
+            pv = 0
+            for t in range(1, len(cash_flows) + 1):
+                if t/2 in spot_rates:
+                    rate = spot_rates[t/2]
+                else:
+                    rate = spot_rate
+                pv += cash_flows[t - 1] / ((1 + rate / 2) ** t)
+            return pv
+
+        # Solve for the spot rate that sets the present value of cash flows equal to the bond price
+        spot_rate_guess = (cash_flows[-1] / price) ** (1/(ttm*2)) - 1
+        spot_rate = fsolve(lambda r: pv_of_cash_flows(r) - price, x0=spot_rate_guess)[0]
+
+        # Store the calculated spot rate
+        spot_rates[ttm] = spot_rate
+
+    return pd.Series(spot_rates)
